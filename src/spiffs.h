@@ -324,6 +324,14 @@ s32_t SPIFFS_remove(spiffs *fs, const char *path);
 s32_t SPIFFS_fremove(spiffs *fs, spiffs_file fh);
 
 /**
+ * Renames a file
+ * @param fs            the file system struct
+ * @param old_path      the path of the file before renaming
+ * @param new_path      the path of the file after renaming
+ */
+s32_t SPIFFS_move(spiffs *fs, const char *old_path, const char *new_path);
+
+/**
  * Gets file status by path
  * @param fs            the file system struct
  * @param path          the path of the file to stat

@@ -193,31 +193,25 @@ s32_t SPIFFS_read(spiffs *fs, spiffs_file fh, void *buf, s32_t len) {
 #if SPIFFS_CACHE_WR
   spiffs_fflush_cache(fs, fh);
 #endif
+  
+  // reading within file size as default
+  s32_t avail = len;
 
   if (fd->fdoffset + len >= fd->size) {
     // reading beyond file size
-    s32_t avail = fd->size - fd->fdoffset;
+    avail = fd->size - fd->fdoffset;
     if (avail <= 0) {
       SPIFFS_API_CHECK_RES_UNLOCK(fs, SPIFFS_ERR_END_OF_OBJECT);
     }
-    res = spiffs_object_read(fd, fd->fdoffset, avail, (u8_t*)buf);
-    if (res == SPIFFS_ERR_END_OF_OBJECT) {
-      fd->fdoffset += avail;
-      SPIFFS_UNLOCK(fs);
-      return avail;
-    } else {
-      SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
-    }
-  } else {
-    // reading within file size
-    res = spiffs_object_read(fd, fd->fdoffset, len, (u8_t*)buf);
-    SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
   }
-  fd->fdoffset += len;
+
+  res = spiffs_object_read(fd, fd->fdoffset, avail, (u8_t*)buf);
+  SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
+  fd->fdoffset += avail;
 
   SPIFFS_UNLOCK(fs);
 
-  return len;
+  return avail;
 }
 
 static s32_t spiffs_hydro_write(spiffs *fs, spiffs_fd *fd, void *buf, u32_t offset, s32_t len) {
@@ -459,6 +453,43 @@ s32_t SPIFFS_fremove(spiffs *fs, spiffs_file fh) {
   SPIFFS_UNLOCK(fs);
 
   return 0;
+}
+
+s32_t SPIFFS_move(spiffs *fs, const char *old_path, const char *new_path) {
+  SPIFFS_API_CHECK_MOUNT(fs);
+  SPIFFS_LOCK(fs);
+
+  spiffs_fd *fd;
+  spiffs_page_ix pix;
+  spiffs_page_ix new_objix_hdr_pix;
+
+  s32_t res = spiffs_fd_find_new(fs, &fd);
+  SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
+
+  res = spiffs_object_find_object_index_header_by_name(fs, (u8_t*)old_path, &pix);
+  if(res != SPIFFS_OK) {
+    spiffs_fd_return(fs, fd->file_nbr);
+  }
+  SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
+
+  res = spiffs_object_open_by_page(fs, pix, fd, 0,0);
+  if (res != SPIFFS_OK) {
+    spiffs_fd_return(fs, fd->file_nbr);
+  }
+  SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
+
+  res = spiffs_object_update_index_hdr(fs, fd, fd->obj_id,
+  fd->objix_hdr_pix, 0, (u8_t*)new_path, 0, &new_objix_hdr_pix);
+  if(res != SPIFFS_OK) {
+    spiffs_fd_return(fs, fd->file_nbr);
+  }
+  SPIFFS_API_CHECK_RES_UNLOCK(fs, res);
+
+  spiffs_fd_return(fs, fd->file_nbr);
+
+  SPIFFS_UNLOCK(fs);
+
+  return SPIFFS_OK;
 }
 
 static s32_t spiffs_stat_pix(spiffs *fs, spiffs_page_ix pix, spiffs_file fh, spiffs_stat *s) {
